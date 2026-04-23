@@ -1,0 +1,165 @@
+2026-04-23 07:13:38 [INFO] Question: apply feature imputaion on missing data
+2026-04-23 07:13:38 [INFO] Running PandasAI with openai-compatible LLM...
+2026-04-23 07:13:38 [INFO] Prompt ID: e79b8a45-7d66-4f63-8a56-30364069157d
+2026-04-23 07:13:38 [INFO] Generating new code...
+2026-04-23 07:13:38 [INFO] Using Prompt: <tables>
+
+<table dialect="duckdb" table_name="table_aec7a6bd6f78cb97d53618ce510b61d8" columns="[{"name": "PassengerId", "type": "integer", "description": null, "expression": null, "alias": null}, {"name": "Survived", "type": "integer", "description": null, "expression": null, "alias": null}, {"name": "Pclass", "type": "integer", "description": null, "expression": null, "alias": null}, {"name": "Name", "type": "string", "description": null, "expression": null, "alias": null}, {"name": "Sex", "type": "string", "description": null, "expression": null, "alias": null}, {"name": "Age", "type": "float", "description": null, "expression": null, "alias": null}, {"name": "SibSp", "type": "integer", "description": null, "expression": null, "alias": null}, {"name": "Parch", "type": "integer", "description": null, "expression": null, "alias": null}, {"name": "Ticket", "type": "string", "description": null, "expression": null, "alias": null}, {"name": "Fare", "type": "float", "description": null, "expression": null, "alias": null}, {"name": "Cabin", "type": "string", "description": null, "expression": null, "alias": null}, {"name": "Embarked", "type": "string", "description": null, "expression": null, "alias": null}]" dimensions="418x12">
+PassengerId,Survived,Pclass,Name,Sex,Age,SibSp,Parch,Ticket,Fare,Cabin,Embarked
+892,0,3,"Kelly, Mr. James",male,34.5,0,0,330911,7.8292,,Q
+893,1,3,"Wilkes, Mrs. James (Ellen Needs)",female,47.0,1,0,363272,7.0,,S
+894,0,2,"Myles, Mr. Thomas Francis",male,62.0,0,0,240276,9.6875,,Q
+895,0,3,"Wirz, Mr. Albert",male,27.0,0,0,315154,8.6625,,S
+896,1,3,"Hirvonen, Mrs. Alexander (Helga E Lindqvist)",female,22.0,1,1,3101298,12.2875,,S
+</table>
+
+
+</tables>
+
+The following functions have already been provided. Please use them as needed and do not redefine them.
+<function>
+def execute_sql_query(sql_query: str) -> pd.DataFrame
+    """This method connects to the database, executes the sql query and returns the dataframe"""
+</function>
+
+
+
+Update this initial code:
+```python
+# TODO: import the required dependencies
+import pandas as pd
+
+# Write code here
+
+# Declare result var: 
+type (possible values "string", "number", "dataframe", "plot"). Examples: { "type": "string", "value": f"The highest salary is {highest_salary}." } or { "type": "number", "value": 125 } or { "type": "dataframe", "value": pd.DataFrame({...}) } or { "type": "plot", "value": "temp_chart.png" }
+
+```
+
+
+
+### QUERY
+ apply feature imputaion on missing data
+
+At the end, declare "result" variable as a dictionary of type and value in the following format:
+
+type (possible values "string", "number", "dataframe", "plot"). Examples: { "type": "string", "value": f"The highest salary is {highest_salary}." } or { "type": "number", "value": 125 } or { "type": "dataframe", "value": pd.DataFrame({...}) } or { "type": "plot", "value": "temp_chart.png" }
+
+
+
+Generate python code and return full updated code:
+
+### Note: Use only relevant table for query and do aggregation, sorting, joins and grouby through sql query
+2026-04-23 07:14:02 [INFO] HTTP Request: POST http://localhost:1106/modelfarm/openai/chat/completions "HTTP/1.1 200 OK"
+2026-04-23 07:14:02 [INFO] Code Generated:
+# TODO: import the required dependencies
+import pandas as pd
+
+# Use the provided execute_sql_query function to run SQL against the provided table.
+# The strategy:
+# - Compute average Age by (Pclass, Sex) and average Fare by Pclass (aggregation / groupby)
+# - Compute the most common Embarked (mode) to use as a global fill for missing Embarked
+# - Left join these aggregates back to the original table and use COALESCE to impute missing values
+# - Fill missing Cabin with 'Unknown'
+# - Sort the final result by PassengerId
+sql_query = """
+WITH age_stats AS (
+    SELECT Pclass, Sex, AVG(Age) AS avg_age
+    FROM table_aec7a6bd6f78cb97d53618ce510b61d8
+    WHERE Age IS NOT NULL
+    GROUP BY Pclass, Sex
+),
+fare_stats AS (
+    SELECT Pclass, AVG(Fare) AS avg_fare
+    FROM table_aec7a6bd6f78cb97d53618ce510b61d8
+    WHERE Fare IS NOT NULL
+    GROUP BY Pclass
+),
+most_embarked AS (
+    SELECT Embarked
+    FROM table_aec7a6bd6f78cb97d53618ce510b61d8
+    WHERE Embarked IS NOT NULL
+    GROUP BY Embarked
+    ORDER BY COUNT(*) DESC
+    LIMIT 1
+)
+SELECT
+    t.PassengerId,
+    t.Survived,
+    t.Pclass,
+    t.Name,
+    t.Sex,
+    -- Impute Age using group-wise average (Pclass & Sex); round to 1 decimal for readability
+    COALESCE(t.Age, ROUND(a.avg_age, 1)) AS Age_imputed,
+    t.SibSp,
+    t.Parch,
+    t.Ticket,
+    -- Impute Fare using group-wise average (Pclass); keep reasonable precision
+    COALESCE(t.Fare, ROUND(f.avg_fare, 4)) AS Fare_imputed,
+    -- Replace missing Cabin with 'Unknown'
+    COALESCE(t.Cabin, 'Unknown') AS Cabin_imputed,
+    -- Impute Embarked with the global most common Embarked
+    COALESCE(t.Embarked, me.Embarked) AS Embarked_imputed
+FROM table_aec7a6bd6f78cb97d53618ce510b61d8 t
+LEFT JOIN age_stats a ON t.Pclass = a.Pclass AND t.Sex = a.Sex
+LEFT JOIN fare_stats f ON t.Pclass = f.Pclass
+CROSS JOIN most_embarked me
+ORDER BY t.PassengerId
+"""
+
+# Execute the SQL and retrieve the imputed dataset
+imputed_df = execute_sql_query(sql_query)
+
+# Prepare the result variable as a dataframe output
+result = { "type": "dataframe", "value": imputed_df }
+2026-04-23 07:14:02 [INFO] Validating code requirements...
+2026-04-23 07:14:02 [INFO] Code validation successful.
+2026-04-23 07:14:02 [INFO] Cleaning the generated code...
+2026-04-23 07:14:02 [INFO] Executing code: import pandas as pd
+sql_query = """
+WITH age_stats AS (
+    SELECT Pclass, Sex, AVG(Age) AS avg_age
+    FROM table_aec7a6bd6f78cb97d53618ce510b61d8
+    WHERE Age IS NOT NULL
+    GROUP BY Pclass, Sex
+),
+fare_stats AS (
+    SELECT Pclass, AVG(Fare) AS avg_fare
+    FROM table_aec7a6bd6f78cb97d53618ce510b61d8
+    WHERE Fare IS NOT NULL
+    GROUP BY Pclass
+),
+most_embarked AS (
+    SELECT Embarked
+    FROM table_aec7a6bd6f78cb97d53618ce510b61d8
+    WHERE Embarked IS NOT NULL
+    GROUP BY Embarked
+    ORDER BY COUNT(*) DESC
+    LIMIT 1
+)
+SELECT
+    t.PassengerId,
+    t.Survived,
+    t.Pclass,
+    t.Name,
+    t.Sex,
+    -- Impute Age using group-wise average (Pclass & Sex); round to 1 decimal for readability
+    COALESCE(t.Age, ROUND(a.avg_age, 1)) AS Age_imputed,
+    t.SibSp,
+    t.Parch,
+    t.Ticket,
+    -- Impute Fare using group-wise average (Pclass); keep reasonable precision
+    COALESCE(t.Fare, ROUND(f.avg_fare, 4)) AS Fare_imputed,
+    -- Replace missing Cabin with 'Unknown'
+    COALESCE(t.Cabin, 'Unknown') AS Cabin_imputed,
+    -- Impute Embarked with the global most common Embarked
+    COALESCE(t.Embarked, me.Embarked) AS Embarked_imputed
+FROM table_aec7a6bd6f78cb97d53618ce510b61d8 t
+LEFT JOIN age_stats a ON t.Pclass = a.Pclass AND t.Sex = a.Sex
+LEFT JOIN fare_stats f ON t.Pclass = f.Pclass
+CROSS JOIN most_embarked me
+ORDER BY t.PassengerId
+"""
+imputed_df = execute_sql_query(sql_query)
+result = {'type': 'dataframe', 'value': imputed_df}
+2026-04-23 07:14:02 [INFO] Response generated successfully.

@@ -612,11 +612,53 @@ def render_insights(df: pd.DataFrame):
         st.markdown(f"- {line}")
 
 
+def _build_pandasai_llm(api_key: str, model: str):
+    """Custom PandasAI LLM that reuses our multi-provider OpenAI client."""
+    from pandasai.llm.base import LLM
+
+    client = _make_openai_client(api_key)
+
+    class _CompatLLM(LLM):
+        @property
+        def type(self) -> str:
+            return "openai-compatible"
+
+        def call(self, instruction, context=None) -> str:
+            prompt = instruction.to_string() if hasattr(instruction, "to_string") else str(instruction)
+            kwargs = {"model": model, "messages": [{"role": "user", "content": prompt}]}
+            if not (model.startswith("gpt-5") or model.startswith("o3") or model.startswith("o4")):
+                kwargs["temperature"] = 0.1
+            resp = client.chat.completions.create(**kwargs)
+            return resp.choices[0].message.content or ""
+
+    return _CompatLLM(api_key=api_key)
+
+
+def run_pandasai_query(df: pd.DataFrame, question: str, api_key: str, model: str):
+    """Run a query through the PandasAI Agent."""
+    try:
+        import pandasai as pai
+        pai_df = pai.DataFrame(df)
+        agent = pai.Agent(pai_df, config={"llm": _build_pandasai_llm(api_key, model)})
+        result = agent.chat(question)
+        return {"result": result}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def render_chat(df: pd.DataFrame, api_key: str, model: str):
     st.subheader("🤖 AI Chat")
     if not api_key:
         st.warning("Add your OpenAI API key in the sidebar to enable AI chat.")
         return
+
+    engine = st.radio(
+        "Engine",
+        options=["Built-in code agent", "PandasAI"],
+        horizontal=True,
+        help="PandasAI uses the PandasAI library for richer agent behavior.",
+        key="chat_engine",
+    )
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -639,7 +681,14 @@ def render_chat(df: pd.DataFrame, api_key: str, model: str):
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
-            res = run_ai_query(df, question, api_key=api_key, model=model)
+            if engine == "PandasAI":
+                res = run_pandasai_query(df, question, api_key=api_key, model=model)
+                if "error" in res:
+                    st.info("PandasAI couldn't run — falling back to built-in agent.")
+                    res = run_ai_query(df, question, api_key=api_key, model=model)
+            else:
+                res = run_ai_query(df, question, api_key=api_key, model=model)
+
             if "error" in res:
                 st.info("Code agent couldn't run — falling back to OpenAI summary mode.")
                 fb = run_openai_fallback(df, question, api_key=api_key, model=model)

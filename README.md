@@ -94,8 +94,8 @@ This project is licensed under the MIT License.
 
 ---
 
-## 👩‍💻 Author
+##  Author
 Ayesha Tariq
 
 Your Name
-GitHub: https://github.com/your-username
+GitHub: https: https://github.com/DeepInsightCoder

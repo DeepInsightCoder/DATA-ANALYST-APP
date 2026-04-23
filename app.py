@@ -295,12 +295,28 @@ def _extract_code(text: str) -> str:
     return text.strip()
 
 
+def _get_secret(name: str) -> str:
+    """Read a value from Streamlit secrets first, then environment."""
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name]).strip()
+    except Exception:
+        pass
+    return os.environ.get(name, "").strip()
+
+
 def _make_openai_client(api_key: str):
     from openai import OpenAI as OpenAIClient
-    proxy_base = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "").strip()
-    proxy_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY", "").strip()
+    # 1) Replit AI Integrations proxy (only inside Replit)
+    proxy_base = _get_secret("AI_INTEGRATIONS_OPENAI_BASE_URL")
+    proxy_key = _get_secret("AI_INTEGRATIONS_OPENAI_API_KEY")
     if proxy_base and proxy_key:
         return OpenAIClient(base_url=proxy_base, api_key=proxy_key)
+    # 2) Custom OpenAI-compatible provider (Groq, OpenRouter, Together, etc.)
+    custom_base = _get_secret("OPENAI_BASE_URL")
+    if custom_base:
+        return OpenAIClient(base_url=custom_base, api_key=api_key)
+    # 3) Plain OpenAI
     return OpenAIClient(api_key=api_key)
 
 
@@ -383,32 +399,42 @@ def render_sidebar():
     st.sidebar.title("📊 AI Data Analyst Pro")
     st.sidebar.caption("Upload a CSV and explore it with AI.")
 
-    proxy_ready = bool(os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "").strip()
-                       and os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY", "").strip())
-    env_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    proxy_ready = bool(_get_secret("AI_INTEGRATIONS_OPENAI_BASE_URL")
+                       and _get_secret("AI_INTEGRATIONS_OPENAI_API_KEY"))
+    env_key = _get_secret("OPENAI_API_KEY")
+    custom_base = _get_secret("OPENAI_BASE_URL")
+
     if proxy_ready:
         st.sidebar.success("🤖 AI ready (Replit AI Integrations)")
-        st.sidebar.caption("No API key needed — usage billed to Replit credits.")
         api_key = env_key or "managed-by-replit"
     elif env_key:
-        st.sidebar.success("🔑 OpenAI key loaded from server")
+        provider = "custom provider" if custom_base else "OpenAI"
+        st.sidebar.success(f"🔑 API key loaded ({provider})")
         with st.sidebar.expander("Override key (optional)"):
             override = st.text_input("Use a different key for this session",
                                      type="password", value="")
         api_key = override.strip() or env_key
     else:
+        st.sidebar.warning("No API key configured.")
         api_key = st.sidebar.text_input(
-            "🔑 OpenAI API Key",
+            "🔑 API Key (OpenAI / Groq / OpenRouter)",
             type="password",
             value="",
-            help="Required only for AI Chat. Your key is kept in this session.",
+            help="Required for AI Chat. Set OPENAI_API_KEY in Streamlit secrets to skip this.",
         )
 
-    model = st.sidebar.selectbox(
-        "Model",
-        options=["gpt-5-mini", "gpt-5", "gpt-5.2", "gpt-4.1-mini", "gpt-4o-mini"],
-        index=0,
-    )
+    if custom_base:
+        st.sidebar.caption(f"Using base URL: `{custom_base}`")
+
+    # Model list — adapt if user pointed to a non-OpenAI provider
+    if custom_base and "groq" in custom_base.lower():
+        model_options = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+    elif custom_base and "openrouter" in custom_base.lower():
+        model_options = ["openai/gpt-4o-mini", "google/gemini-2.0-flash-exp:free", "meta-llama/llama-3.3-70b-instruct:free"]
+    else:
+        model_options = ["gpt-5-mini", "gpt-5", "gpt-5.2", "gpt-4.1-mini", "gpt-4o-mini"]
+
+    model = st.sidebar.selectbox("Model", options=model_options, index=0)
 
     uploaded = st.sidebar.file_uploader("📁 Upload CSV", type=["csv"])
 
@@ -616,16 +642,12 @@ def main():
         st.info("👈 Upload a CSV file from the sidebar to get started.")
         with st.expander("Don't have a CSV? Try a sample dataset"):
             if st.button("Load Iris sample dataset"):
-                from sklearn.datasets import load_iris  # type: ignore
                 try:
-                    iris = load_iris(as_frame=True)
-                    df = iris.frame
-                    st.session_state["sample_df"] = df
-                    st.rerun()
-                except Exception:
                     url = "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv"
                     st.session_state["sample_df"] = pd.read_csv(url)
                     st.rerun()
+                except Exception as e:
+                    st.error(f"Could not load sample dataset: {e}")
         if "sample_df" in st.session_state:
             df = st.session_state["sample_df"]
         else:

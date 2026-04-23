@@ -521,8 +521,38 @@ def render_profiling(df: pd.DataFrame, minimal: bool):
             file_name="profiling_report.html",
             mime="text/html",
         )
-    else:
-        st.warning("Profiling report could not be generated for this dataset.")
+        return
+
+    # Fallback: built-in lightweight profile (works without ydata-profiling)
+    st.info("Using built-in lightweight profile.")
+    st.markdown("### Overview")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Rows", f"{sample.shape[0]:,}")
+    c2.metric("Columns", f"{sample.shape[1]:,}")
+    c3.metric("Missing cells", f"{int(sample.isna().sum().sum()):,}")
+    c4.metric("Duplicate rows", f"{int(sample.duplicated().sum()):,}")
+
+    st.markdown("### Column summary")
+    summary = pd.DataFrame({
+        "column": sample.columns,
+        "dtype": sample.dtypes.astype(str).values,
+        "non_null": sample.notna().sum().values,
+        "nulls": sample.isna().sum().values,
+        "null_%": (sample.isna().mean() * 100).round(2).values,
+        "unique": [sample[c].nunique(dropna=True) for c in sample.columns],
+    })
+    st.dataframe(summary, use_container_width=True)
+
+    num_cols = sample.select_dtypes(include="number").columns.tolist()
+    if num_cols:
+        st.markdown("### Numeric statistics")
+        st.dataframe(sample[num_cols].describe().transpose(), use_container_width=True)
+    cat_cols = sample.select_dtypes(include=["object", "category"]).columns.tolist()
+    if cat_cols:
+        st.markdown("### Categorical top values")
+        for c in cat_cols[:10]:
+            with st.expander(f"{c} — top 10"):
+                st.dataframe(sample[c].value_counts(dropna=False).head(10))
 
 
 def render_visualizations(df: pd.DataFrame, sample_size: int, bins: int, top_n: int):
@@ -658,19 +688,33 @@ def main():
                 try:
                     url = "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv"
                     st.session_state["sample_df"] = pd.read_csv(url)
+                    st.session_state["current_dataset"] = "iris-sample"
+                    st.session_state["chat_history"] = []
                     st.rerun()
                 except Exception as e:
                     st.error(f"Could not load sample dataset: {e}")
         if "sample_df" in st.session_state:
             df = st.session_state["sample_df"]
+            dataset_id = "iris-sample"
         else:
             return
     else:
         try:
             df = load_csv(cfg["uploaded"].getvalue(), cfg["uploaded"].name)
+            dataset_id = f"{cfg['uploaded'].name}-{cfg['uploaded'].size}"
         except Exception as e:
             st.error(f"Failed to read CSV: {e}")
             return
+
+    # Reset chat history whenever the active dataset changes
+    if st.session_state.get("current_dataset") != dataset_id:
+        st.session_state["current_dataset"] = dataset_id
+        st.session_state["chat_history"] = []
+
+    # Sidebar: manual reset button
+    if st.sidebar.button("🗑️ Clear AI chat history"):
+        st.session_state["chat_history"] = []
+        st.rerun()
 
     # Tabs for the main flow
     tab_overview, tab_profile, tab_viz, tab_insights, tab_chat = st.tabs(

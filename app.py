@@ -133,14 +133,27 @@ def plot_correlation_heatmap(df: pd.DataFrame, numeric_cols: List[str]):
 
 def plot_line(df: pd.DataFrame, x_col: str, y_cols: List[str]):
     fig, ax = plt.subplots(figsize=(10, 4))
-    plot_df = df[[x_col] + y_cols].copy()
+    # Keep only unique columns (avoid duplicate-name issues)
+    cols = []
+    for c in [x_col] + list(y_cols):
+        if c not in cols and c in df.columns:
+            cols.append(c)
+    plot_df = df.loc[:, cols].copy()
+    # If column name is duplicated in source, df.loc returns DataFrame — keep first
+    if isinstance(plot_df.get(x_col), pd.DataFrame):
+        plot_df = plot_df.loc[:, ~plot_df.columns.duplicated()]
     try:
         plot_df[x_col] = pd.to_datetime(plot_df[x_col], errors="ignore")
     except Exception:
         pass
-    plot_df = plot_df.sort_values(x_col)
+    plot_df = plot_df.dropna(subset=[x_col])
+    try:
+        plot_df = plot_df.sort_values(by=x_col)
+    except Exception:
+        pass
     for y in y_cols:
-        ax.plot(plot_df[x_col], plot_df[y], label=y, linewidth=1.5)
+        if y in plot_df.columns:
+            ax.plot(plot_df[x_col], plot_df[y], label=y, linewidth=1.5)
     ax.set_title(f"Trend of {', '.join(y_cols)} over {x_col}")
     ax.set_xlabel(x_col)
     ax.set_ylabel("Value")

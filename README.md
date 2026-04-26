@@ -40,8 +40,7 @@ This app allows users to upload datasets, visualize insights, and generate autom
 Clone the repository:
 
 ```bash
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+git clone[ https://github.com/DeepInsightCoder/DATA-ANALYST-APP
 ```
 
 Install dependencies:

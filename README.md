@@ -99,7 +99,7 @@ This project is licensed under the MIT License.
 ---
 
 ##  Author
-Ayesha Tariq
+DeepInsightCoder-Ayesha Tariq
 
 Your Name
 GitHub: https: https://github.com/DeepInsightCoder

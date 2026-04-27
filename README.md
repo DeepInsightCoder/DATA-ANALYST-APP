@@ -11,6 +11,11 @@ This app allows users to upload datasets, visualize insights, and generate autom
 
 ---
 
+##  Architecture Diagram
+![Architecture Diagram](architecture.png)
+
+---
+
 ##  Features
 
 *  Upload CSV datasets
